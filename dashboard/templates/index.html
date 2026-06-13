@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuroFall — Real-time Fall Detection</title>
+<style>
+/* ── Design tokens ───────────────────────────────────────────── */
+:root {
+  --bg:        #080c14;
+  --surface:   #0f1623;
+  --surface2:  #162030;
+  --border:    #1c2d42;
+  --border2:   #243650;
+  --accent:    #38bdf8;
+  --accent2:   #0ea5e9;
+  --danger:    #f43f5e;
+  --danger2:   #fb7185;
+  --ok:        #10b981;
+  --ok2:       #34d399;
+  --warn:      #f59e0b;
+  --warn2:     #fbbf24;
+  --purple:    #a78bfa;
+  --text:      #e2eaf7;
+  --muted:     #4d6a8a;
+  --muted2:    #7a9bbf;
+  --mono:      'Courier New', monospace;
+  --sans:      'Segoe UI', system-ui, -apple-system, sans-serif;
+  --radius:    12px;
+  --radius-sm: 8px;
+}
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.app-shell {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  grid-template-columns: 220px 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main";
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Topbar ──────────────────────────────────────────────────── */
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 50;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--text);
+}
+.logo-icon {
+  width: 30px; height: 30px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 8px;
+  display: grid; place-items: center;
+  font-size: 1rem;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16,185,129,0.12);
+  border: 1px solid rgba(16,185,129,0.3);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ok);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.live-dot {
+  width: 7px; height: 7px;
+  background: var(--ok);
+  border-radius: 50%;
+  animation: pulse-green 1.5s infinite;
+}
+@keyframes pulse-green {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.5; transform:scale(1.3); }
+}
+
+.time-display {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--muted2);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.sidebar {
+  grid-area: sidebar;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px 0;
+}
+
+.nav-section {
+  padding: 0 12px;
+  margin-bottom: 8px;
+}
+.nav-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  padding: 8px 12px 4px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted2);
+  transition: all 0.15s;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item.active {
+  background: rgba(56,189,248,0.1);
+  color: var(--accent);
+  font-weight: 600;
+}
+.nav-item .icon { font-size: 1rem; width: 20px; text-align: center; }
+
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Main area ───────────────────────────────────────────────── */
+.main {
+  grid-area: main;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Page views ──────────────────────────────────────────────── */
+.page { display: none; flex-direction: column; gap: 16px; }
+.page.active { display: flex; }
+
+/* ── Section header ──────────────────────────────────────────── */
+.section-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.section-hdr h2 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+.card-sm { padding: 14px 16px; }
+
+/* ── Alert banner ────────────────────────────────────────────── */
+#alert-banner {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  background: rgba(244,63,94,0.12);
+  border: 1px solid rgba(244,63,94,0.4);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  animation: banner-shake 0.4s ease;
+}
+#alert-banner.show { display: flex; }
+@keyframes banner-shake {
+  0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 60%{transform:translateX(6px)}
+}
+.alert-icon { font-size: 1.6rem; }
+.alert-info { flex: 1; }
+.alert-info strong { color: var(--danger); font-size: 0.95rem; display: block; margin-bottom: 2px; }
+.alert-info span   { color: var(--muted2); font-size: 0.8rem; }
+.alert-dismiss {
+  background: none; border: 1px solid var(--border2); color: var(--muted2);
+  padding: 6px 14px; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.8rem;
+  transition: all 0.15s;
+}
+.alert-dismiss:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ── KPI row ─────────────────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.kpi.kpi-safe::before   { background: var(--ok); }
+.kpi.kpi-danger::before { background: var(--danger); }
+.kpi.kpi-warn::before   { background: var(--warn); }
+.kpi.kpi-info::before   { background: var(--accent); }
+
+.kpi-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.kpi-val {
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.kpi-sub {
+  font-size: 0.72rem;
+  color: var(--muted2);
+}
+.kpi.kpi-safe .kpi-val   { color: var(--ok); }
+.kpi.kpi-danger .kpi-val { color: var(--danger); }
+.kpi.kpi-warn .kpi-val   { color: var(--warn); }
+.kpi.kpi-info .kpi-val   { color: var(--accent); }
+
+/* ── Health score ring ───────────────────────────────────────── */
+.health-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+.health-ring-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.ring-svg { width: 140px; height: 140px; }
+.ring-bg  { fill: none; stroke: var(--border2); stroke-width: 10; }
+.ring-fg  { fill: none; stroke-width: 10; stroke-linecap: round;
+             stroke-dasharray: 339.3; stroke-dashoffset: 339.3;
+             transform: rotate(-90deg); transform-origin: 50% 50%;
+             transition: stroke-dashoffset 0.8s ease, stroke 0.5s; }
+.ring-label { font-size: 2rem; font-weight: 700; font-family: var(--mono); fill: var(--text); }
+.ring-sub   { font-size: 0.7rem; fill: var(--muted); }
+.health-details { display: flex; flex-direction: column; gap: 10px; }
+.health-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.health-stat .hl { font-size: 0.78rem; color: var(--muted2); }
+.health-stat .hr { font-size: 0.85rem; font-weight: 600; font-family: var(--mono); }
+
+/* ── Charts ──────────────────────────────────────────────────── */
+.chart-wrap { position: relative; width: 100%; height: 180px; }
+canvas { display: block; border-radius: 6px; }
+
+/* ── Sensor gauges ───────────────────────────────────────────── */
+.gauge-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.gauge {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  text-align: center;
+}
+.gauge-axis  { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.gauge-val   { font-size: 1.4rem; font-weight: 700; font-family: var(--mono); }
+.gauge-bar   { height: 4px; background: var(--border2); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.gauge-fill  { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+
+/* ── Events table ────────────────────────────────────────────── */
+.events-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.events-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.events-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.events-table tr:last-child td { border-bottom: none; }
+.events-table tr:hover td { background: var(--surface2); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.badge-danger { background: rgba(244,63,94,0.15); color: var(--danger); border: 1px solid rgba(244,63,94,0.3); }
+.badge-ok     { background: rgba(16,185,129,0.1);  color: var(--ok);    border: 1px solid rgba(16,185,129,0.25); }
+
+.empty-state {
+  text-align: center;
+  padding: 32px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ── Contacts ────────────────────────────────────────────────── */
+.contacts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.contact-card {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition: border-color 0.15s;
+}
+.contact-card:hover { border-color: var(--border2); }
+.contact-avatar {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--accent2), var(--purple));
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.contact-info strong { display: block; font-size: 0.88rem; font-weight: 600; }
+.contact-info span   { font-size: 0.75rem; color: var(--muted2); }
+.contact-actions { display: flex; gap: 6px; }
+
+/* ── Form ────────────────────────────────────────────────────── */
+.form-add {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.form-add h3 { font-size: 0.8rem; color: var(--muted2); margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+.form-group input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-group input:focus { border-color: var(--accent); }
+.form-group input::placeholder { color: var(--muted); }
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  border: none; transition: all 0.15s; white-space: nowrap;
+}
+.btn-primary   { background: var(--accent2); color: #fff; }
+.btn-primary:hover { background: var(--accent); }
+.btn-danger    { background: rgba(244,63,94,0.15); color: var(--danger); border: 1px solid rgba(244,63,94,0.3); }
+.btn-danger:hover  { background: rgba(244,63,94,0.25); }
+.btn-ghost     { background: none; color: var(--muted2); border: 1px solid var(--border); }
+.btn-ghost:hover   { border-color: var(--border2); color: var(--text); }
+.btn-sm { padding: 5px 11px; font-size: 0.75rem; }
+.btn-icon { padding: 6px; width: 30px; height: 30px; justify-content: center; }
+
+/* ── Voice alert panel ───────────────────────────────────────── */
+.voice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.voice-row:last-child { border-bottom: none; }
+.voice-row-info strong { display: block; font-size: 0.85rem; margin-bottom: 2px; }
+.voice-row-info span   { font-size: 0.75rem; color: var(--muted2); }
+
+/* Toggle */
+.toggle {
+  position: relative; width: 44px; height: 24px;
+  background: var(--border2); border-radius: 12px;
+  cursor: pointer; transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--ok); }
+.toggle::after {
+  content: ''; position: absolute;
+  top: 3px; left: 3px;
+  width: 18px; height: 18px;
+  background: #fff; border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(20px); }
+
+/* Voice waveform animation */
+.voice-wave {
+  display: flex; align-items: center; gap: 3px; height: 28px;
+}
+.wave-bar {
+  width: 3px; border-radius: 2px; background: var(--accent);
+  animation: wave 0.8s ease-in-out infinite;
+}
+.wave-bar:nth-child(1) { animation-delay: 0s;    height: 8px; }
+.wave-bar:nth-child(2) { animation-delay: 0.15s; height: 16px; }
+.wave-bar:nth-child(3) { animation-delay: 0.3s;  height: 24px; }
+.wave-bar:nth-child(4) { animation-delay: 0.15s; height: 16px; }
+.wave-bar:nth-child(5) { animation-delay: 0s;    height: 8px; }
+@keyframes wave {
+  0%,100% { transform: scaleY(1); }
+  50%      { transform: scaleY(0.4); }
+}
+.voice-wave.silent .wave-bar { animation: none; opacity: 0.25; }
+
+/* ── Simulate fall btn ───────────────────────────────────────── */
+.sim-btn {
+  background: linear-gradient(135deg, rgba(244,63,94,0.15), rgba(244,63,94,0.05));
+  border: 1px solid rgba(244,63,94,0.4);
+  color: var(--danger2);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.3px;
+  display: flex; align-items: center; gap: 8px;
+}
+.sim-btn:hover {
+  background: rgba(244,63,94,0.2);
+  border-color: var(--danger);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(244,63,94,0.2);
+}
+.sim-btn:active { transform: translateY(0); }
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 56px auto 1fr;
+    grid-template-areas: "topbar" "sidebar" "main";
+    height: auto;
+    overflow: auto;
+  }
+  .sidebar {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-label, .sidebar-bottom { display: none; }
+  .nav-section { display: flex; padding: 0; gap: 4px; }
+  .nav-item { flex-direction: column; gap: 3px; padding: 8px 12px; font-size: 0.65rem; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .health-row { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+  .gauge-row { grid-template-columns: 1fr 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ── Topbar ──────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-icon">&#9889;</div>
+      NeuroFall
+    </div>
+    <div class="topbar-right">
+      <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+      <div class="time-display" id="clock">--:--:--</div>
+      <button class="sim-btn" onclick="triggerFall()">&#9888;&#65039; Simulate Fall</button>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ─────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="nav-label">Monitor</div>
+    <div class="nav-section">
+      <button class="nav-item active" onclick="showPage('dashboard', this)">
+        <span class="icon">&#128202;</span> Dashboard
+      </button>
+      <button class="nav-item" onclick="showPage('health', this)">
+        <span class="icon">&#10084;&#65039;</span> Health Score
+      </button>
+      <button class="nav-item" onclick="showPage('events', this)">
+        <span class="icon">&#128680;</span> Fall Events
+      </button>
+    </div>
+    <div class="nav-label">Settings</div>
+    <div class="nav-section">
+      <button class="nav-item" onclick="showPage('contacts', this)">
+        <span class="icon">&#128222;</span> Contacts
+      </button>
+      <button class="nav-item" onclick="showPage('voice', this)">
+        <span class="icon">&#128266;</span> Voice Alerts
+      </button>
+    </div>
+    <div class="sidebar-bottom">
+      <div style="font-size:0.7rem; color:var(--muted)">NeuroFall v2.0<br>SNN + ML Model</div>
+    </div>
+  </nav>
+
+  <!-- ── Main ────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Alert Banner -->
+    <div id="alert-banner">
+      <div class="alert-icon">&#128680;</div>
+      <div class="alert-info">
+        <strong>FALL DETECTED</strong>
+        <span id="alert-detail">Emergency contacts have been notified</span>
+      </div>
+      <button class="alert-dismiss" onclick="dismissAlert()">Dismiss</button>
+    </div>
+
+    <!-- ── Dashboard Page ─────────────────────────────────────── -->
+    <div class="page active" id="page-dashboard">
+
+      <!-- KPIs -->
+      <div class="kpi-row">
+        <div class="kpi kpi-safe">
+          <div class="kpi-label">Status</div>
+          <div class="kpi-val" id="kpi-status" style="font-size:1rem; padding-top:4px;">SAFE</div>
+          <div class="kpi-sub" id="kpi-prob">Confidence: 0%</div>
+        </div>
+        <div class="kpi kpi-info">
+          <div class="kpi-label">Magnitude</div>
+          <div class="kpi-val" id="kpi-mag">0.00</div>
+          <div class="kpi-sub">m/s² (accel)</div>
+        </div>
+        <div class="kpi kpi-warn">
+          <div class="kpi-label">Falls Today</div>
+          <div class="kpi-val" id="kpi-falls">0</div>
+          <div class="kpi-sub" id="kpi-last-fall">No falls recorded</div>
+        </div>
+        <div class="kpi kpi-safe">
+          <div class="kpi-label">Health Score</div>
+          <div class="kpi-val" id="kpi-health-score">&#8212;</div>
+          <div class="kpi-sub" id="kpi-health-status">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Accel Chart -->
+      <div class="card">
+        <div class="section-hdr">
+          <h2>Acceleration Timeline</h2>
+          <span style="font-size:0.75rem;color:var(--muted2)">Last 60 readings</span>
+        </div>
+        <div style="height:12px;"></div>
+        <div class="chart-wrap"><canvas id="chart-main"></canvas></div>
+      </div>
+
+      <!-- Sensor gauges -->
+      <div class="card card-sm">
+        <div class="section-hdr" style="margin-bottom:12px;">
+          <h2>Live Sensor Axes</h2>
+        </div>
+        <div class="gauge-row">
+          <div class="gauge">
+            <div class="gauge-axis">AX (m/s²)</div>
+            <div class="gauge-val" id="g-ax" style="color:var(--danger2)">0.00</div>
+            <div class="gauge-bar"><div class="gauge-fill" id="gb-ax" style="background:var(--danger2);width:50%"></div></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-axis">AY (m/s²)</div>
+            <div class="gauge-val" id="g-ay" style="color:var(--ok2)">9.80</div>
+            <div class="gauge-bar"><div class="gauge-fill" id="gb-ay" style="background:var(--ok2);width:80%"></div></div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-axis">AZ (m/s²)</div>
+            <div class="gauge-val" id="g-az" style="color:var(--accent)">0.00</div>
+            <div class="gauge-bar"><div class="gauge-fill" id="gb-az" style="background:var(--accent);width:50%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Health Page ─────────────────────────────────────────── -->
+    <div class="page" id="page-health">
+      <div class="card">
+        <div class="section-hdr" style="margin-bottom:16px;"><h2>Health Score</h2></div>
+        <div class="health-row">
+          <div class="health-ring-wrap">
+            <svg class="ring-svg" viewBox="0 0 120 120">
+              <circle class="ring-bg" cx="60" cy="60" r="54"/>
+              <circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="54" stroke="var(--ok)"/>
+              <text class="ring-label" x="60" y="60" text-anchor="middle" dominant-baseline="central" id="ring-score-text">&#8212;</text>
+              <text class="ring-sub" x="60" y="76" text-anchor="middle" id="ring-sub-text">Loading</text>
+            </svg>
+          </div>
+          <div class="health-details">
+            <div class="health-stat">
+              <span class="hl">Current Status</span>
+              <span class="hr" id="hs-status" style="color:var(--ok)">&#8212;</span>
+            </div>
+            <div class="health-stat">
+              <span class="hl">Falls Logged</span>
+              <span class="hr" id="hs-falls">0</span>
+            </div>
+            <div class="health-stat">
+              <span class="hl">Avg Magnitude</span>
+              <span class="hr" id="hs-mag">&#8212;</span>
+            </div>
+            <div class="health-stat">
+              <span class="hl">Monitoring Since</span>
+              <span class="hr" id="hs-since">&#8212;</span>
+            </div>
+            <div class="health-stat">
+              <span class="hl">Sample Rate</span>
+              <span class="hr">~2 Hz (simulated)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-hdr" style="margin-bottom:12px;"><h2>Magnitude History</h2></div>
+        <div class="chart-wrap"><canvas id="chart-health"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ── Events Page ─────────────────────────────────────────── -->
+    <div class="page" id="page-events">
+      <div class="card">
+        <div class="section-hdr" style="margin-bottom:16px;">
+          <h2>Fall Event Log</h2>
+          <span id="event-badge" style="background:rgba(244,63,94,0.15);color:var(--danger);font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(244,63,94,0.3);">0 events</span>
+        </div>
+        <div id="events-container">
+          <div class="empty-state">&#9989; No falls detected yet<br><span style="font-size:0.78rem;color:var(--muted)">Use "Simulate Fall" to test the system</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Contacts Page ─────────────────────────────────────────── -->
+    <div class="page" id="page-contacts">
+      <div class="card">
+        <div class="section-hdr" style="margin-bottom:14px;"><h2>Emergency Contacts</h2></div>
+
+        <div class="form-add">
+          <h3>Add Contact</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Full Name</label>
+              <input type="text" id="c-name" placeholder="Ramesh Kumar">
+            </div>
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="tel" id="c-phone" placeholder="+91 98765 43210">
+            </div>
+            <div class="form-group">
+              <label>Relation</label>
+              <input type="text" id="c-relation" placeholder="Son / Doctor">
+            </div>
+            <button class="btn btn-primary" onclick="addContact()">Add</button>
+          </div>
+        </div>
+
+        <div class="contacts-grid" id="contacts-grid">
+          <div class="empty-state">No contacts added yet.<br>Add a contact to get notified during falls.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Voice Alerts Page ──────────────────────────────────────── -->
+    <div class="page" id="page-voice">
+      <div class="card">
+        <div class="section-hdr" style="margin-bottom:16px;"><h2>Voice Alert Settings</h2></div>
+
+        <div class="voice-row">
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+              <div class="voice-wave" id="wave-indicator">
+                <div class="wave-bar"></div><div class="wave-bar"></div>
+                <div class="wave-bar"></div><div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+              </div>
+              <strong style="font-size:0.95rem;">Voice Alerts</strong>
+            </div>
+            <div class="voice-row-info">
+              <span>Browser text-to-speech engine will announce fall alerts</span>
+            </div>
+          </div>
+          <div class="toggle on" id="toggle-voice" onclick="toggleVoice(this)"></div>
+        </div>
+
+        <div class="voice-row">
+          <div class="voice-row-info">
+            <strong>Fall Alert Message</strong>
+            <span>This message will be spoken when a fall is detected</span>
+          </div>
+          <div style="flex:1;margin-left:20px;">
+            <input type="text" id="voice-msg" value="Warning! Fall detected. Emergency contacts are being notified. Please check on the patient immediately."
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:var(--radius-sm);font-size:0.82rem;outline:none;">
+          </div>
+        </div>
+
+        <div class="voice-row">
+          <div class="voice-row-info">
+            <strong>Alert Volume</strong>
+            <span>Voice alert volume</span>
+          </div>
+          <input type="range" id="voice-vol" min="0" max="1" step="0.1" value="1" style="accent-color:var(--accent);width:140px;">
+        </div>
+
+        <div class="voice-row">
+          <div class="voice-row-info">
+            <strong>Speech Rate</strong>
+            <span>Speed of speech (0.5 = slow, 1.5 = fast)</span>
+          </div>
+          <input type="range" id="voice-rate" min="0.5" max="1.5" step="0.1" value="0.9" style="accent-color:var(--accent);width:140px;">
+        </div>
+
+        <div style="margin-top:16px;display:flex;gap:10px;">
+          <button class="btn btn-primary" onclick="testVoice()">&#128266; Test Alert</button>
+          <button class="btn btn-ghost" onclick="stopVoice()">&#9209; Stop</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// State
+let fallCount    = 0;
+let histData     = [];
+let voiceOn      = true;
+let monitorSince = new Date().toLocaleTimeString();
+let contacts     = [];
+
+// Clock
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Navigation
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+// Fetch stream
+async function fetchStream(fallMode = false) {
+  try {
+    const url  = '/api/stream' + (fallMode ? '?force_fall=1' : '');
+    const res  = await fetch(url);
+    const data = await res.json();
+    handleReading(data);
+  } catch(e) { console.warn('Stream fetch failed:', e); }
+}
+
+function handleReading(data) {
+  const isFall = data.prediction === 1;
+  const prob   = (data.probability * 100).toFixed(1);
+
+  const statusEl = document.getElementById('kpi-status');
+  statusEl.textContent = isFall ? 'FALL!' : 'SAFE';
+  statusEl.style.color = isFall ? 'var(--danger)' : 'var(--ok)';
+  document.querySelector('.kpi:first-child').className = 'kpi ' + (isFall ? 'kpi-danger' : 'kpi-safe');
+
+  document.getElementById('kpi-prob').textContent         = 'Confidence: ' + prob + '%';
+  document.getElementById('kpi-mag').textContent          = data.magnitude.toFixed(2);
+  document.getElementById('kpi-health-score').textContent = data.health_score ?? '—';
+  document.getElementById('kpi-health-status').textContent= data.health_status ?? '';
+
+  const s = data.sensor;
+  setGauge('ax', s.ax, -15, 15, 'var(--danger2)');
+  setGauge('ay', s.ay,   0, 15, 'var(--ok2)');
+  setGauge('az', s.az, -15,  0, 'var(--accent)');
+
+  histData = data.history || [];
+  drawChart('chart-main',   histData, isFall);
+  drawChart('chart-health', histData, false, true);
+
+  updateHealthPage(data);
+
+  if (isFall) {
+    fallCount++;
+    document.getElementById('kpi-falls').textContent    = fallCount;
+    document.getElementById('kpi-last-fall').textContent = 'Last: ' + data.timestamp;
+    showAlertBanner(data);
+    if (voiceOn) speakAlert();
+  }
+
+  updateEventsTable(data.events || []);
+  contacts = data.contacts || contacts;
+}
+
+function setGauge(id, val, min, max, color) {
+  document.getElementById('g-' + id).textContent = val.toFixed(2);
+  const pct  = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+  const fill = document.getElementById('gb-' + id);
+  if (fill) { fill.style.width = pct + '%'; fill.style.background = color; }
+}
+
+// Chart
+function drawChart(canvasId, hist, latestFall, small = false) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !hist.length) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.parentElement.clientWidth;
+  const H = small ? 160 : 180;
+  canvas.width  = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0c1422'; ctx.fillRect(0, 0, W, H);
+
+  const pad  = { l: 40, r: 12, t: 10, b: 24 };
+  const cw   = W - pad.l - pad.r;
+  const ch   = H - pad.t - pad.b;
+  const mags = hist.map(h => h.mag);
+  const maxV = Math.max(12, ...mags) * 1.1;
+
+  [0, 5, 10].forEach(g => {
+    const y = pad.t + ch - (g / maxV) * ch;
+    ctx.strokeStyle = '#1c2d40'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+    ctx.fillStyle = '#4d6a8a'; ctx.font = '9px monospace';
+    ctx.fillText(g, 4, y + 4);
+  });
+
+  hist.forEach((h, i) => {
+    if (!h.fall) return;
+    const x = pad.l + (i / (hist.length - 1)) * cw;
+    ctx.fillStyle = 'rgba(244,63,94,0.15)';
+    ctx.fillRect(x - 8, pad.t, 16, ch);
+  });
+
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch);
+  grad.addColorStop(0, 'rgba(56,189,248,0.6)');
+  grad.addColorStop(1, 'rgba(56,189,248,0)');
+
+  ctx.beginPath();
+  mags.forEach((m, i) => {
+    const x = pad.l + (i / Math.max(1, hist.length - 1)) * cw;
+    const y = pad.t + ch - (Math.min(m, maxV) / maxV) * ch;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  ctx.lineTo(pad.l + cw, pad.t + ch);
+  ctx.lineTo(pad.l, pad.t + ch);
+  ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  hist.forEach((h, i) => {
+    if (!h.fall) return;
+    const x = pad.l + (i / Math.max(1, hist.length - 1)) * cw;
+    const y = pad.t + ch - (Math.min(h.mag, maxV) / maxV) * ch;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'var(--danger)'; ctx.fill();
+  });
+}
+
+// Health page
+function updateHealthPage(data) {
+  const score  = data.health_score ?? 0;
+  const status = data.health_status ?? '—';
+  const circ   = 2 * Math.PI * 54;
+  const offset = circ - (score / 100) * circ;
+  const ring   = document.getElementById('ring-fg');
+  ring.style.strokeDashoffset = offset;
+  ring.style.stroke = score >= 70 ? 'var(--ok)' : score >= 40 ? 'var(--warn)' : 'var(--danger)';
+  document.getElementById('ring-score-text').textContent = score;
+  document.getElementById('ring-sub-text').textContent   = status;
+  document.getElementById('hs-status').textContent       = status;
+  document.getElementById('hs-status').style.color       = score >= 70 ? 'var(--ok)' : score >= 40 ? 'var(--warn)' : 'var(--danger)';
+  document.getElementById('hs-falls').textContent        = fallCount;
+  document.getElementById('hs-since').textContent        = monitorSince;
+
+  const mags = histData.map(h => h.mag);
+  if (mags.length) {
+    document.getElementById('hs-mag').textContent = (mags.reduce((a,b)=>a+b,0)/mags.length).toFixed(2) + ' m/s²';
+  }
+
+  const scoreEl = document.getElementById('kpi-health-score');
+  if (scoreEl) scoreEl.style.color = score >= 70 ? 'var(--ok)' : score >= 40 ? 'var(--warn)' : 'var(--danger)';
+}
+
+// Alert banner
+function showAlertBanner(data) {
+  const banner   = document.getElementById('alert-banner');
+  const detail   = document.getElementById('alert-detail');
+  const notified = (data.contacts || []).map(c => c.name);
+  detail.textContent = notified.length
+    ? `Contacts notified: ${notified.join(', ')} | Location: ${data.location.lat.toFixed(4)}, ${data.location.lon.toFixed(4)}`
+    : `No contacts set up. Location: ${data.location.lat.toFixed(4)}, ${data.location.lon.toFixed(4)}`;
+  banner.classList.add('show');
+  setTimeout(() => banner.classList.remove('show'), 12000);
+}
+
+function dismissAlert() {
+  document.getElementById('alert-banner').classList.remove('show');
+}
+
+// Events table
+function updateEventsTable(events) {
+  const container = document.getElementById('events-container');
+  document.getElementById('event-badge').textContent = events.length + ' events';
+  if (!events.length) {
+    container.innerHTML = '<div class="empty-state">&#9989; No falls detected yet<br><span style="font-size:0.78rem;color:var(--muted)">Use "Simulate Fall" to test the system</span></div>';
+    return;
+  }
+  container.innerHTML = `
+    <table class="events-table">
+      <thead><tr><th>Time</th><th>Confidence</th><th>Location</th><th>Notified</th><th>Status</th></tr></thead>
+      <tbody>
+        ${events.map(e => `
+          <tr>
+            <td style="font-family:var(--mono);color:var(--muted2)">${e.time}</td>
+            <td><span class="badge badge-danger">&#9888; ${e.confidence}</span></td>
+            <td style="font-size:0.78rem;color:var(--muted2)">${e.location}</td>
+            <td style="font-size:0.78rem;">${(e.contacts_notified||[]).join(', ') || '<span style="color:var(--muted)">—</span>'}</td>
+            <td><span class="badge badge-ok">&#10003; ${e.status}</span></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// Contacts
+async function addContact() {
+  const name     = document.getElementById('c-name').value.trim();
+  const phone    = document.getElementById('c-phone').value.trim();
+  const relation = document.getElementById('c-relation').value.trim();
+  if (!name || !phone) return alert('Name and phone are required');
+  try {
+    const res  = await fetch('/api/contacts', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, phone, relation})
+    });
+    const data = await res.json();
+    if (data.success) {
+      contacts.push(data.contact);
+      renderContacts();
+      document.getElementById('c-name').value = '';
+      document.getElementById('c-phone').value = '';
+      document.getElementById('c-relation').value = '';
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function deleteContact(id) {
+  if (!confirm('Remove this contact?')) return;
+  try {
+    await fetch('/api/contacts/' + id, {method:'DELETE'});
+    contacts = contacts.filter(c => c.id !== id);
+    renderContacts();
+  } catch(e) { console.error(e); }
+}
+
+function renderContacts() {
+  const grid = document.getElementById('contacts-grid');
+  if (!contacts.length) {
+    grid.innerHTML = '<div class="empty-state">No contacts added yet.<br>Add a contact to get notified during falls.</div>';
+    return;
+  }
+  grid.innerHTML = contacts.map(c => `
+    <div class="contact-card">
+      <div class="contact-avatar">${c.name[0].toUpperCase()}</div>
+      <div class="contact-info">
+        <strong>${c.name}</strong>
+        <span>${c.phone}${c.relation ? ' · ' + c.relation : ''}</span>
+      </div>
+      <div class="contact-actions">
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteContact(${c.id})" title="Remove">&#128465;</button>
+      </div>
+    </div>`).join('');
+}
+
+async function loadContacts() {
+  try {
+    const res = await fetch('/api/contacts');
+    contacts  = await res.json();
+    renderContacts();
+  } catch(e) {}
+}
+
+// Voice
+function speakAlert() {
+  if (!voiceOn || !window.speechSynthesis) return;
+  const msg  = document.getElementById('voice-msg').value || 'Warning! Fall detected.';
+  const vol  = parseFloat(document.getElementById('voice-vol').value);
+  const rate = parseFloat(document.getElementById('voice-rate').value);
+  stopVoice();
+  const utt  = new SpeechSynthesisUtterance(msg);
+  utt.volume = vol; utt.rate = rate; utt.lang = 'en-US';
+  window.speechSynthesis.speak(utt);
+}
+function testVoice() { speakAlert(); }
+function stopVoice()  { window.speechSynthesis?.cancel(); }
+function toggleVoice(el) {
+  el.classList.toggle('on');
+  voiceOn = el.classList.contains('on');
+  document.getElementById('wave-indicator').classList.toggle('silent', !voiceOn);
+}
+
+// Simulate fall
+function triggerFall() { fetchStream(true); }
+
+// Auto-stream
+function startStream() {
+  fetchStream();
+  setInterval(() => fetchStream(), 2000);
+}
+
+window.addEventListener('resize', () => {
+  if (histData.length) drawChart('chart-main', histData, false);
+});
+
+loadContacts();
+startStream();
+</script>
+</body>
+</html>
