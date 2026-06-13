@@ -306,4 +306,9 @@ There's still a lot more to build. Real SMS. A mobile app. Historical data persi
 
 ⚠️ Important: This is a research prototype. Before deploying for a real patient, please integrate with certified medical alert hardware, add proper data persistence and backup, and ensure compliance with healthcare regulations in your region. The 30-second cancellation window, in particular, may need adjustment based on your patient's cognitive and physical capabilities.
 
+Team:
+Leader: Tanisha Dangwal
+contributor: Vaibhav Murty
+
+
 
