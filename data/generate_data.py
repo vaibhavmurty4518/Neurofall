@@ -4,6 +4,9 @@ import os
 
 np.random.seed(42)
 
+SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
+
 WINDOW_SIZE = 100   # 100 samples per window @ 50Hz = 2 seconds
 N_WINDOWS   = 2000  # total windows
 
@@ -91,6 +94,7 @@ df = pd.DataFrame(rows, columns=cols)
 df['label'] = labels
 df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
-os.makedirs('data', exist_ok=True)
-df.to_csv('data/fall_dataset.csv', index=False)
+output_path = os.path.join(SCRIPT_DIR, 'fall_dataset.csv')
+df.to_csv(output_path, index=False)
 print(f"Dataset created: {len(df)} samples, {df['label'].sum()} falls, {(df['label']==0).sum()} normal")
+print(f"Saved to: {output_path}")

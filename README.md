@@ -59,21 +59,30 @@ Throughout all of this, the Health Score keeps updating in the background — qu
 📁 Project Structure
 Here's how everything fits together. Keep this layout exactly as shown — the relative paths in app.py depend on it.
 
-your_project/
+neurofall/
 │
-├── web/                          ← This is where you run the server from
+├── dashboard/                     ← The web UI & server
 │   ├── app.py                    ← The Flask backend — all the logic lives here
-│   ├── static/                   ← Put any custom CSS/images here (optional)
+│   ├── static/                   ← Static assets & generated model plots
 │   └── templates/
 │       └── index.html            ← The entire dashboard — one self-contained file
 │
-├── model/
-│   ├── neurofall_model.pkl       ← Your trained model (must have 'model', 'scaler', 'lif' keys)
-│   └── metrics.json              ← Shown on the dashboard KPI cards
+├── data/
+│   ├── generate_data.py          ← Synthetic IMU fall/normal data generator
+│   └── fall_dataset.csv          ← Generated sensor dataset
 │
-└── utils/
-    └── lif_layer.py              ← The LIFLayer class — the SNN encoder
-The model/ and utils/ folders need to be one level above web/. That's how sys.path.insert finds them.
+├── model/
+│   ├── train_model.py            ← SNN (LIF) + Classifier training pipeline
+│   ├── neurofall_model.pkl       ← Trained model bundle ('model', 'scaler', 'lif')
+│   └── metrics.json              ← Accuracy & AUC metrics for dashboard KPI cards
+│
+├── utils/
+│   ├── lif_layer.py              ← The LIFLayer class — biological SNN encoder
+│   └── detector.py               ← Standalone real-time console test demo
+│
+├── requirements.txt              ← Python dependencies
+├── run.py                        ← One-command launcher (generates data, trains, runs server)
+└── main.py                       ← Main entry point
 
 metrics.json should look like this:
 
@@ -86,7 +95,8 @@ This should take about five minutes if you already have Python installed.
 
 Step 1 — Get the code
 git clone https://github.com/yourname/neurofall.git
-cd neurofall
+cd Neurofall
+
 Step 2 — Set up a virtual environment
 This keeps your dependencies clean and separate from other projects.
 
@@ -99,22 +109,19 @@ venv\Scripts\activate
 source venv/bin/activate
 You'll know it worked when you see (venv) at the start of your terminal prompt.
 
-Step 3 — Install what you need
-pip install flask numpy scikit-learn
-If your model was trained with XGBoost, add that too:
+Step 3 — Install dependencies
+pip install -r requirements.txt
 
-pip install xgboost
-Step 4 — Double-check your files
-Before starting, make sure these three files exist:
+Step 4 — Start it up (One command)
+python run.py
 
-model/neurofall_model.pkl   ✅  (your trained model)
-model/metrics.json          ✅  (accuracy and AUC numbers)
-utils/lif_layer.py          ✅  (the LIF encoder class)
-If any of these are missing, the server will crash on startup with a clear error message telling you which one.
+This single command will:
+1. Generate synthetic sensor dataset if missing
+2. Train the brain-inspired SNN model if missing
+3. Launch the live dashboard on http://localhost:5000
 
-Step 5 — Start it up
-cd web
-python app.py
+Alternatively, run the dashboard directly:
+python dashboard/app.py
 Then open your browser and go to http://localhost:5000
 
 You should see the dashboard come alive immediately, with the live stream starting to update. Hit "Simulate Fall" in the top right to see the whole alert sequence in action before you deploy it for real.

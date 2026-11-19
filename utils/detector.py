@@ -50,13 +50,13 @@ def predict(features):
     return int(prob>=0.5), round(float(prob),4)
 
 def run_demo(n_steps=20):
-    print("\n🧠 NeuroFall — Real-time Demo"); print("="*45)
+    print("\nNeuroFall - Real-time Demo"); print("="*45)
     for i in range(n_steps):
         is_fall = i in [7,14]
         feats = generate_fall_features() if is_fall else generate_normal_features()
         pred, prob = predict(feats)
-        status = "🚨 FALL DETECTED" if pred else "✅ Normal"
-        alert  = "⚡ ALERT SENT!" if pred else ""
+        status = "[!] FALL DETECTED" if pred else "[OK] Normal"
+        alert  = ">> ALERT SENT!" if pred else ""
         print(f"  t={i+1:02d}s | {status} | confidence={prob:.2%}  {alert}")
         time.sleep(0.05)
     print("="*45)
